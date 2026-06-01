@@ -68,7 +68,9 @@ function M.setup(opts)
   end
 
   vim.api.nvim_create_user_command("Mitmproxy", function(cmd)
+    local port = cmd.args:match("%-%-listen%-port%s+(%d+)") or cmd.args:match("%-p%s+(%d+)") or "8080"
     vim.cmd("terminal mitmproxy " .. cmd.args)
+    vim.api.nvim_buf_set_name(0, "mitmproxy-" .. port)
     vim.cmd("startinsert")
   end, { nargs = "*", desc = "Launch mitmproxy in terminal" })
 end
