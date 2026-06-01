@@ -24,26 +24,22 @@ if [ -z "$NVIM" ]; then
   exec "${NVIM_PARENT_EDITOR_FALLBACK:-vi}" "$@"
 fi
 
-DONE=$(mktemp "${TMPDIR:-/tmp}/mitm-edit.XXXXXX")
+FIFO=$(mktemp -u "${TMPDIR:-/tmp}/mitm-edit.XXXXXX")
+mkfifo "$FIFO"
+trap 'rm -f "$FIFO"' EXIT
 
 esc() { printf '%s' "$1" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g"; }
 F=$(esc "$1")
-D=$(esc "$DONE")
+D=$(esc "$FIFO")
 
 nvim --server "$NVIM" --remote-expr \
   "v:lua.require('mitmproxy_editor')._open('$F','$D')" \
   >/dev/null 2>&1 || {
-  rm -f "$DONE"
+  rm -f "$FIFO"
   exec "${NVIM_PARENT_EDITOR_FALLBACK:-vi}" "$@"
 }
 
-while [ -f "$DONE" ]; do
-  nvim --server "$NVIM" --remote-expr "1" >/dev/null 2>&1 || {
-    rm -f "$DONE"
-    exit 1
-  }
-  sleep 0.2
-done
+read _ < "$FIFO"
 ]=])
   f:close()
   local uv = vim.uv or vim.loop
@@ -78,7 +74,7 @@ function M.setup(opts)
 end
 
 --- Called from the helper script via --remote-expr RPC.
---- Opens `file` in a split and signals completion by removing `done_file`.
+--- Opens `file` in a split and signals completion by writing to a FIFO.
 function M._open(file, done_file)
   vim.schedule(function()
     local term_win = vim.api.nvim_get_current_win()
@@ -92,7 +88,11 @@ function M._open(file, done_file)
       buffer = buf,
       once = true,
       callback = function()
-        pcall(os.remove, done_file)
+        local fd = io.open(done_file, "w")
+        if fd then
+          fd:write("\n")
+          fd:close()
+        end
         if config.auto_return then
           vim.schedule(function()
             if
